@@ -1,0 +1,90 @@
+{
+  "project_info": {
+    "project_number": "586166112416",
+    "project_id": "animalrescue-3cff4",
+    "storage_bucket": "animalrescue-3cff4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:586166112416:android:63a0d8c40448313a0079c5",
+        "android_client_info": {
+          "package_name": "com.example.animal_rescue"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "586166112416-19eqqlfbapg91c2v3hvd4hd978jlkffu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.animal_rescue",
+            "certificate_hash": "7ff06b986237403dbe46e76e10ddbc2c20ede69e"
+          }
+        },
+        {
+          "client_id": "586166112416-aqa0betqbpr69159hfmqjrgsjst3ttv5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCDJvLj2N7eG6CTYqGaEsZnYk19qvF3Bak"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "586166112416-aqa0betqbpr69159hfmqjrgsjst3ttv5.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "586166112416-bqcg3urdb3ua89oh203ula61pflghu56.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.animalRescue"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:586166112416:android:ce25f0f4c1fd89a10079c5",
+        "android_client_info": {
+          "package_name": "com.example.animalrescue"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "586166112416-aqa0betqbpr69159hfmqjrgsjst3ttv5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCDJvLj2N7eG6CTYqGaEsZnYk19qvF3Bak"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "586166112416-aqa0betqbpr69159hfmqjrgsjst3ttv5.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "586166112416-bqcg3urdb3ua89oh203ula61pflghu56.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.animalRescue"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
