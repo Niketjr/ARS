@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'createRescueRequest_screen.dart';
 
+// Import your target screens for navigation
+import 'notifications_screen.dart';
+import 'profile_screen.dart';
+import 'settings_screen.dart';
+
 class HomeScreen extends StatefulWidget {
   final String userId;
   final String userType; // e.g., 'rescuer', 'ngo', etc.
@@ -15,11 +20,42 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  int _selectedIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+  }
+
+  void _onItemTapped(int index) {
+    if (index == 0) {
+      // Already on Home, do nothing
+    } else if (index == 1) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => NotificationsScreen(userId: widget.userId),
+        ),
+      );
+    } else if (index == 2) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProfileScreen(userId: widget.userId),
+        ),
+      );
+    } else if (index == 3) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SettingsScreen(userId: widget.userId),
+        ),
+      );
+    }
+    setState(() {
+      _selectedIndex = index;
+    });
   }
 
   Widget _buildRequestCard(DocumentSnapshot doc, {required bool isPending}) {
@@ -39,8 +75,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         )
             : Text('Location not available'),
         trailing: Icon(Icons.chevron_right),
-        onTap: isPending
-            ? () {
+        onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -51,17 +86,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
             ),
           );
-        }
-            : null,
+        },
       ),
     );
   }
 
-  Widget _buildRequestList(String status, {required bool isPending}) {
+  Widget _buildRequestList(List<String> statuses, {required bool isPending}) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('rescue_requests')
-          .where('status', isEqualTo: status)
+          .where('status', whereIn: statuses)
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
@@ -74,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
 
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Center(child: Text('No $status requests.'));
+          return Center(child: Text('No ${statuses.join("/")} requests.'));
         }
 
         return ListView(
@@ -108,8 +142,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildRequestList('pending', isPending: true),
-          _buildRequestList('rescued', isPending: false),
+          _buildRequestList(['pending', 'being rescued'], isPending: true),
+          _buildRequestList(['rescued'], isPending: false),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -126,6 +160,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         },
         tooltip: 'Create Rescue Request',
         child: Icon(Icons.add),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        type: BottomNavigationBarType.fixed,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.notifications),
+            label: 'Notifications',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: 'Settings',
+          ),
+        ],
       ),
     );
   }

@@ -74,9 +74,9 @@ class _CreateRescueRequestScreenState extends State<CreateRescueRequestScreen> {
   }
 
   Future<void> _submitRequest() async {
-    if (_image == null || _locationData == null || _detailsController.text.isEmpty) {
+    if (_locationData == null || _detailsController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Please complete all fields.')),
+        SnackBar(content: Text('Please provide location and details.')),
       );
       return;
     }
@@ -84,19 +84,35 @@ class _CreateRescueRequestScreenState extends State<CreateRescueRequestScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final imageUrl = await _uploadImage(_image!);
+      String? imageUrl;
 
-      await FirebaseFirestore.instance.collection('rescue_requests').add({
+      // Upload image if selected
+      if (_image != null) {
+        imageUrl = await _uploadImage(_image!);
+      }
+
+      // Save rescue request and get the reference
+      final DocumentReference requestRef = await FirebaseFirestore.instance.collection('rescue_requests').add({
         'user_id': widget.userId,
         'user_type': widget.userType,
         'notes': _detailsController.text,
-        'image_url': imageUrl,
+        'image_url': imageUrl, // This will be null if no image is uploaded
         'location': {
           'latitude': _locationData!.latitude,
           'longitude': _locationData!.longitude,
         },
         'status': 'pending',
         'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // Save a related notification
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'type': 'rescue_request',
+        'user_id': widget.userId,
+        'request_id': requestRef.id,
+        'message': 'A new rescue request has been created.',
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -111,6 +127,7 @@ class _CreateRescueRequestScreenState extends State<CreateRescueRequestScreen> {
       setState(() => _isSubmitting = false);
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

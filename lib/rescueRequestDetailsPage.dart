@@ -40,6 +40,11 @@ class _RescueRequestDetailsPageState extends State<RescueRequestDetailsPage> {
     setState(() => _isUpdating = false);
   }
 
+  Future<Map<String, dynamic>?> _getRescuerInfo(String rescuerId) async {
+    final doc = await FirebaseFirestore.instance.collection('users').doc(rescuerId).get();
+    return doc.exists ? doc.data() : null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -55,74 +60,95 @@ class _RescueRequestDetailsPageState extends State<RescueRequestDetailsPage> {
           }
 
           final data = snapshot.data!.data() as Map<String, dynamic>;
-
           final LatLng location = LatLng(
             data['location']['latitude'],
             data['location']['longitude'],
           );
-
           final String status = data['status'];
           final String? assignedRescuer = data['rescuer_id'];
 
-          return SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Image.network(data['image_url'], height: 200, fit: BoxFit.cover),
-                SizedBox(height: 10),
-                SizedBox(
-                  height: 250,
-                  child: GoogleMap(
-                    initialCameraPosition: CameraPosition(
-                      target: location,
-                      zoom: 15,
-                    ),
-                    markers: {
-                      Marker(
-                        markerId: MarkerId('animal_location'),
-                        position: location,
+          return FutureBuilder<Map<String, dynamic>?>(
+            future: assignedRescuer != null ? _getRescuerInfo(assignedRescuer) : null,
+            builder: (context, userSnapshot) {
+              final rescuerData = userSnapshot.data;
+
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (data['image_url'] != null && data['image_url'].toString().isNotEmpty)
+                      Image.network(data['image_url'], height: 200, fit: BoxFit.cover)
+                    else
+                      Container(
+                        height: 200,
+                        color: Colors.grey[300],
+                        child: Center(child: Text('No image provided')),
                       ),
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Description: ${data['notes']}', style: TextStyle(fontSize: 16)),
-                      SizedBox(height: 8),
-                      Text('Status: $status', style: TextStyle(fontSize: 16)),
-                      SizedBox(height: 8),
-                      if (assignedRescuer != null)
-                        Text('Rescuer: $assignedRescuer', style: TextStyle(fontSize: 16)),
-                      SizedBox(height: 20),
-
-                      // "Accept Rescue" - Only if user is rescuer & request is unassigned
-                      if (widget.userType == 'rescuer' && assignedRescuer == null)
-                        ElevatedButton.icon(
-                          onPressed: _isUpdating ? null : _acceptRescue,
-                          icon: Icon(Icons.assignment_turned_in),
-                          label: Text('Accept Rescue'),
+                    SizedBox(height: 10),
+                    SizedBox(
+                      height: 250,
+                      child: GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: location,
+                          zoom: 15,
                         ),
-
-                      // "Mark as Rescued" - Only if user is assigned rescuer & not yet rescued
-                      if (widget.userType == 'rescuer' &&
-                          assignedRescuer == widget.userId &&
-                          status != 'rescued')
-                        ElevatedButton.icon(
-                          onPressed: _isUpdating ? null : _markAsRescued,
-                          icon: Icon(Icons.check_circle),
-                          label: Text('Mark as Rescued'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
+                        markers: {
+                          Marker(
+                            markerId: MarkerId('animal_location'),
+                            position: location,
                           ),
-                        ),
-                    ],
-                  ),
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Description: ${data['notes']}', style: TextStyle(fontSize: 16)),
+                          SizedBox(height: 8),
+                          Text('Status: $status', style: TextStyle(fontSize: 16)),
+                          SizedBox(height: 8),
+
+                          if (assignedRescuer != null)
+                            userSnapshot.connectionState == ConnectionState.waiting
+                                ? Text('Loading rescuer info...')
+                                : rescuerData != null
+                                ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Rescuer: ${rescuerData['name']}', style: TextStyle(fontSize: 16)),
+                                Text('Contact: ${rescuerData['phone']}', style: TextStyle(fontSize: 16)),
+                              ],
+                            )
+                                : Text('Rescuer: (info not found)', style: TextStyle(fontSize: 16)),
+
+                          SizedBox(height: 20),
+
+                          if (assignedRescuer == null)
+                            ElevatedButton.icon(
+                              onPressed: _isUpdating ? null : _acceptRescue,
+                              icon: Icon(Icons.assignment_turned_in),
+                              label: Text('Accept Rescue'),
+                            ),
+
+                          // 🔔 NEW BUTTON visible to ALL user types if status is 'being rescued'
+                          if (status == 'being rescued')
+                            ElevatedButton.icon(
+                              onPressed: _isUpdating ? null : _markAsRescued,
+                              icon: Icon(Icons.check_circle),
+                              label: Text('Rescued'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           );
         },
       ),
