@@ -1,16 +1,17 @@
 import 'package:animalrescue/rescueRequestDetailsPage.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'createRescueRequest_screen.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:geocoding/geocoding.dart';
 
-// Import your target screens for navigation
-import 'notifications_screen.dart';
+import 'createRescueRequest_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userId;
-  final String userType; // e.g., 'rescuer', 'ngo', etc.
+  final String userType;
 
   const HomeScreen({required this.userId, required this.userType, super.key});
 
@@ -20,74 +21,158 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  int _selectedIndex = 0;
+  late FirebaseMessaging _messaging;
+  final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin =
+  FlutterLocalNotificationsPlugin();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _initFCM();
   }
 
-  void _onItemTapped(int index) {
-    if (index == 0) {
-      // Already on Home, do nothing
-    } else if (index == 1) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => NotificationsScreen(userId: widget.userId),
-        ),
-      );
-    } else if (index == 2) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ProfileScreen(userId: widget.userId),
-        ),
-      );
-    } else if (index == 3) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => SettingsScreen(userId: widget.userId),
-        ),
-      );
-    }
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
+  Future<void> _initFCM() async {
+    _messaging = FirebaseMessaging.instance;
 
-  Widget _buildRequestCard(DocumentSnapshot doc, {required bool isPending}) {
-    final data = doc.data() as Map<String, dynamic>;
+    NotificationSettings settings = await _messaging.requestPermission();
+    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        RemoteNotification? notification = message.notification;
+        AndroidNotification? android = message.notification?.android;
 
-    return Card(
-      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      elevation: 3,
-      child: ListTile(
-        leading: data['image_url'] != null
-            ? Image.network(data['image_url'], width: 60, height: 60, fit: BoxFit.cover)
-            : Icon(Icons.image_not_supported),
-        title: Text(data['notes'] ?? 'No description'),
-        subtitle: data['location'] != null
-            ? Text(
-          'Location: ${data['location']['latitude'].toStringAsFixed(4)}, ${data['location']['longitude'].toStringAsFixed(4)}',
-        )
-            : Text('Location not available'),
-        trailing: Icon(Icons.chevron_right),
-        onTap: () {
+        if (notification != null && android != null) {
+          _flutterLocalNotificationsPlugin.show(
+            notification.hashCode,
+            notification.title,
+            notification.body,
+            NotificationDetails(
+              android: AndroidNotificationDetails(
+                'rescue_channel',
+                'Rescue Notifications',
+                importance: Importance.high,
+                priority: Priority.high,
+              ),
+            ),
+            payload: message.data['requestId'],
+          );
+        }
+      });
+
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        final requestId = message.data['requestId'];
+        if (requestId != null) {
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => RescueRequestDetailsPage(
-                requestId: doc.id,
+                requestId: requestId,
                 userId: widget.userId,
                 userType: widget.userType,
               ),
             ),
           );
+        }
+      });
+
+      const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const initSettings = InitializationSettings(android: androidInit);
+      await _flutterLocalNotificationsPlugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (NotificationResponse response) async {
+          final payload = response.payload;
+          if (payload != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => RescueRequestDetailsPage(
+                  requestId: payload,
+                  userId: widget.userId,
+                  userType: widget.userType,
+                ),
+              ),
+            );
+          }
         },
-      ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _onItemTapped(int index) {
+    if (index == 2) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileScreen(userId: widget.userId)));
+    } else if (index == 3) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen(userId: widget.userId)));
+    }
+  }
+
+  Future<String> _getAddress(Map<String, dynamic> data) async {
+    final location = data['location'];
+    final manualAddress = data['manual_address'];
+
+    if (location != null &&
+        location['latitude'] != null &&
+        location['longitude'] != null) {
+      try {
+        List<Placemark> placemarks = await placemarkFromCoordinates(
+          location['latitude'],
+          location['longitude'],
+        );
+        if (placemarks.isNotEmpty) {
+          final place = placemarks.first;
+          return '${place.street}, ${place.locality}, ${place.administrativeArea}, ${place.country}';
+        }
+      } catch (_) {}
+    }
+
+    if (manualAddress != null && manualAddress.toString().isNotEmpty) {
+      return manualAddress;
+    }
+
+    return 'Location not available';
+  }
+
+  Widget _buildRequestCard(DocumentSnapshot doc, {required bool isPending}) {
+    final data = doc.data() as Map<String, dynamic>;
+
+    return FutureBuilder<String>(
+      future: _getAddress(data),
+      builder: (context, snapshot) {
+        final address = snapshot.connectionState == ConnectionState.waiting
+            ? 'Fetching address...'
+            : snapshot.data ?? 'Location not available';
+
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+          elevation: 3,
+          child: ListTile(
+            leading: data['image_url'] != null
+                ? Image.network(data['image_url'], width: 60, height: 60, fit: BoxFit.cover)
+                : const Icon(Icons.image_not_supported),
+            title: Text(data['notes'] ?? 'No description'),
+            subtitle: Text('Location: $address'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RescueRequestDetailsPage(
+                    requestId: doc.id,
+                    userId: widget.userId,
+                    userType: widget.userType,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -100,17 +185,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
+          return const Center(child: CircularProgressIndicator());
         }
-
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return Center(child: Text('No ${statuses.join("/")} requests.'));
         }
-
         return ListView(
           children: snapshot.data!.docs
               .map((doc) => _buildRequestCard(doc, isPending: isPending))
@@ -121,68 +200,74 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   @override
-  void dispose() {
-    _tabController.dispose(); // Proper cleanup
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Animal Rescue Dashboard'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Pending Requests'),
-            Tab(text: 'Rescued Log'),
-          ],
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFE0C3FC), Color(0xFF8EC5FC)], // white-purple gradient
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildRequestList(['pending', 'being rescued'], isPending: true),
-          _buildRequestList(['rescued'], isPending: false),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => CreateRescueRequestScreen(
-                userId: widget.userId,
-                userType: widget.userType,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text(
+            'Animal Rescue Dashboard',
+            style: TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          bottom: TabBar(
+            controller: _tabController,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: Colors.white,
+            tabs: const [
+              Tab(text: 'Pending Requests'),
+              Tab(text: 'Rescued Log'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          controller: _tabController,
+          children: [
+            _buildRequestList(['pending', 'being rescued'], isPending: true),
+            _buildRequestList(['rescued'], isPending: false),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          backgroundColor: Colors.white,
+          foregroundColor: Color(0xFF6A1B9A),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CreateRescueRequestScreen(
+                  userId: widget.userId,
+                  userType: widget.userType,
+                ),
               ),
-            ),
-          );
-        },
-        tooltip: 'Create Rescue Request',
-        child: Icon(Icons.add),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.notifications),
-            label: 'Notifications',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
+            );
+          },
+          tooltip: 'Create Rescue Request',
+          child: const Icon(Icons.add),
+        ),
+        bottomNavigationBar: BottomNavigationBar(
+          currentIndex: 0,
+          onTap: _onItemTapped,
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: Colors.white,
+          unselectedItemColor: Colors.white70,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+            BottomNavigationBarItem(icon: Icon(Icons.notifications), label: 'Disabled'),
+            BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+            BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
+          ],
+        ),
       ),
     );
   }

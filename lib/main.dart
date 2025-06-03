@@ -1,46 +1,100 @@
 import 'dart:developer';
 import 'package:animalrescue/registration_screen.dart';
+import 'package:animalrescue/welcome_screen.dart';
+import 'package:animalrescue/home_screen.dart';
+import 'package:animalrescue/splash_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'firebase_options.dart';
-import 'welcome_screen.dart';
-import 'home_screen.dart';
-import 'splash_screen.dart';
-import '_dataupload.dart';
+
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  _showNotification(message);
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // await Service().addRescueRequest(
-  //   imageUrl: 'https://example.com/image.jpg',
-  //   latitude: 12.9716,
-  //   longitude: 77.5946,
-  //   notes: 'Injured dog spotted near the park.',
-  //   createdBy: 'user123',
-  //   userType: 'general',
-  // );
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  runApp(AnimalRescueApp());
+  const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const InitializationSettings initSettings = InitializationSettings(android: androidSettings);
+  await flutterLocalNotificationsPlugin.initialize(initSettings);
+
+  runApp(const AnimalRescueApp());
 }
 
-class AnimalRescueApp extends StatelessWidget {
+class AnimalRescueApp extends StatefulWidget {
   const AnimalRescueApp({super.key});
+
+  @override
+  State<AnimalRescueApp> createState() => _AnimalRescueAppState();
+}
+
+class _AnimalRescueAppState extends State<AnimalRescueApp> {
+  @override
+  void initState() {
+    super.initState();
+    _setupFCM();
+  }
+
+  void _setupFCM() async {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+    // Request permissions
+    await messaging.requestPermission();
+
+    // Get FCM token
+    final token = await messaging.getToken();
+    log("FCM Token: $token");
+
+    // Save to Firestore if needed
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && token != null) {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'fcm_token': token,
+      });
+    }
+
+    // Foreground message handling
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      _showNotification(message);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Animal Rescue',
-      theme: ThemeData(
-        primarySwatch: Colors.teal,
-      ),
-      home: AuthWrapper(),
+      theme: ThemeData(primarySwatch: Colors.teal),
+      home: const AuthWrapper(),
     );
   }
+}
+
+void _showNotification(RemoteMessage message) async {
+  const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    'high_importance_channel',
+    'High Importance Notifications',
+    importance: Importance.high,
+    priority: Priority.high,
+  );
+
+  const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
+
+  await flutterLocalNotificationsPlugin.show(
+    0,
+    message.notification?.title ?? 'Animal Rescue Alert',
+    message.notification?.body ?? 'You have a new rescue request',
+    platformDetails,
+  );
 }
 
 class AuthWrapper extends StatelessWidget {
@@ -52,17 +106,16 @@ class AuthWrapper extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return SplashScreen();
+          return const SplashScreen();
         } else if (snapshot.hasData) {
           final user = snapshot.data!;
           return FutureBuilder<DocumentSnapshot>(
             future: FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
             builder: (context, userSnapshot) {
               if (userSnapshot.connectionState == ConnectionState.waiting) {
-                return SplashScreen();
+                return const SplashScreen();
               }
 
-              // If user doc exists, navigate to HomeScreen
               if (userSnapshot.hasData && userSnapshot.data!.exists) {
                 final userData = userSnapshot.data!.data() as Map<String, dynamic>;
                 final userType = userData['user_type'] ?? 'Unknown';
@@ -72,17 +125,14 @@ class AuthWrapper extends StatelessWidget {
                   userType: userType,
                 );
               } else {
-                // Redirect to registration screen
-                return RegistrationScreen();
+                return const RegistrationScreen();
               }
             },
           );
         } else {
-          return WelcomeScreen();
+          return const WelcomeScreen();
         }
       },
     );
   }
 }
-
-

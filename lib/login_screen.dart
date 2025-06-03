@@ -31,7 +31,6 @@ class _LoginScreenState extends State<LoginScreen> {
       final userCredential = await _auth.signInWithCredential(credential);
       final String userId = userCredential.user!.uid;
 
-      // Fetch user_type from Firestore
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
@@ -43,7 +42,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final String userType = userDoc['user_type'];
 
-      // Navigate to HomeScreen
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -64,10 +62,53 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () => _handleSignIn(context),
-          child: Text('Sign in with Google'),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFE0C3FC), Color(0xFF8EC5FC)], // purple gradient
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        width: double.infinity,
+        height: double.infinity,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.login, size: 80, color: Colors.white),
+                const SizedBox(height: 20),
+                const Text(
+                  'Login to Continue',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 40),
+                ElevatedButton(
+                  onPressed: () => _handleSignIn(context),
+                  child: const Text('Sign in with Google'),
+                  style: ElevatedButton.styleFrom(
+                    foregroundColor: Color(0xFF6A1B9A), // deep purple text
+                    backgroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
