@@ -4,7 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:location/location.dart';
+import 'package:location/location.dart' as loc;
+import 'package:geocoding/geocoding.dart';
 
 class CreateRescueRequestScreen extends StatefulWidget {
   final String userId;
@@ -22,7 +23,8 @@ class CreateRescueRequestScreen extends StatefulWidget {
 
 class _CreateRescueRequestScreenState extends State<CreateRescueRequestScreen> {
   File? _image;
-  LocationData? _locationData;
+  loc.LocationData? _locationData;
+  String? _address;
   final TextEditingController _detailsController = TextEditingController();
   bool _isSubmitting = false;
 
@@ -33,9 +35,9 @@ class _CreateRescueRequestScreenState extends State<CreateRescueRequestScreen> {
   }
 
   Future<void> _getCurrentLocation() async {
-    Location location = Location();
+    loc.Location location = loc.Location();
     bool serviceEnabled;
-    PermissionStatus permissionGranted;
+    loc.PermissionStatus permissionGranted;
 
     serviceEnabled = await location.serviceEnabled();
     if (!serviceEnabled) {
@@ -44,15 +46,33 @@ class _CreateRescueRequestScreenState extends State<CreateRescueRequestScreen> {
     }
 
     permissionGranted = await location.hasPermission();
-    if (permissionGranted == PermissionStatus.denied) {
+    if (permissionGranted == loc.PermissionStatus.denied) {
       permissionGranted = await location.requestPermission();
-      if (permissionGranted != PermissionStatus.granted) return;
+      if (permissionGranted != loc.PermissionStatus.granted) return;
     }
 
     final locData = await location.getLocation();
-    setState(() {
-      _locationData = locData;
-    });
+
+    if (mounted) {
+      setState(() {
+        _locationData = locData;
+      });
+      _getAddressFromLatLng(locData.latitude!, locData.longitude!);
+    }
+  }
+
+  Future<void> _getAddressFromLatLng(double lat, double lng) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isNotEmpty) {
+        final Placemark place = placemarks.first;
+        setState(() {
+          _address = "${place.name}, ${place.locality}, ${place.administrativeArea}, ${place.country}";
+        });
+      }
+    } catch (e) {
+      print('Error getting address: $e');
+    }
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -68,15 +88,18 @@ class _CreateRescueRequestScreenState extends State<CreateRescueRequestScreen> {
 
   Future<String> _uploadImage(File image) async {
     final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final ref = FirebaseStorage.instance.ref().child('rescue_images').child(fileName);
+    final ref = FirebaseStorage.instance
+        .ref()
+        .child('rescue_images')
+        .child(fileName);
     await ref.putFile(image);
     return await ref.getDownloadURL();
   }
 
   Future<void> _submitRequest() async {
-    if (_locationData == null || _detailsController.text.isEmpty) {
+    if (_locationData == null || _detailsController.text.isEmpty || _address == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Please provide location and details.')),
+        const SnackBar(content: Text('Please wait for location and provide details.')),
       );
       return;
     }
@@ -86,26 +109,27 @@ class _CreateRescueRequestScreenState extends State<CreateRescueRequestScreen> {
     try {
       String? imageUrl;
 
-      // Upload image if selected
       if (_image != null) {
         imageUrl = await _uploadImage(_image!);
       }
 
-      // Save rescue request and get the reference
-      final DocumentReference requestRef = await FirebaseFirestore.instance.collection('rescue_requests').add({
+      final Map<String, dynamic> locationMap = {
+        'latitude': (_locationData!.latitude as num).toDouble(),
+        'longitude': (_locationData!.longitude as num).toDouble(),
+        'address': _address,
+      };
+
+      final DocumentReference requestRef =
+      await FirebaseFirestore.instance.collection('rescue_requests').add({
         'user_id': widget.userId,
         'user_type': widget.userType,
         'notes': _detailsController.text,
-        'image_url': imageUrl, // This will be null if no image is uploaded
-        'location': {
-          'latitude': _locationData!.latitude,
-          'longitude': _locationData!.longitude,
-        },
+        'image_url': imageUrl,
+        'location': locationMap,
         'status': 'pending',
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-      // Save a related notification
       await FirebaseFirestore.instance.collection('notifications').add({
         'type': 'rescue_request',
         'user_id': widget.userId,
@@ -115,26 +139,44 @@ class _CreateRescueRequestScreenState extends State<CreateRescueRequestScreen> {
         'read': false,
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Rescue request submitted!')),
-      );
-      Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Rescue request submitted!')),
+        );
+        Navigator.pop(context);
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to submit request: $e')),
       );
     } finally {
-      setState(() => _isSubmitting = false);
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
+  Widget _buildLocationDisplay() {
+    return Row(
+      children: [
+        const Icon(Icons.location_on),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            _address ?? 'Fetching location address...',
+            style: const TextStyle(fontSize: 16),
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Create Rescue Request')),
+      appBar: AppBar(title: const Text('Create Rescue Request')),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             if (_image != null)
@@ -143,55 +185,45 @@ class _CreateRescueRequestScreenState extends State<CreateRescueRequestScreen> {
               Container(
                 height: 200,
                 color: Colors.grey[300],
-                child: Center(child: Text('No image selected')),
+                child: const Center(child: Text('No image selected')),
               ),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ElevatedButton.icon(
                   onPressed: () => _pickImage(ImageSource.camera),
-                  icon: Icon(Icons.camera),
-                  label: Text('Camera'),
+                  icon: const Icon(Icons.camera),
+                  label: const Text('Camera'),
                 ),
-                SizedBox(width: 10),
+                const SizedBox(width: 10),
                 ElevatedButton.icon(
                   onPressed: () => _pickImage(ImageSource.gallery),
-                  icon: Icon(Icons.photo),
-                  label: Text('Gallery'),
+                  icon: const Icon(Icons.photo),
+                  label: const Text('Gallery'),
                 ),
               ],
             ),
-            SizedBox(height: 20),
-            Row(
-              children: [
-                Icon(Icons.location_on),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _locationData != null
-                        ? 'Lat: ${_locationData!.latitude}, Lng: ${_locationData!.longitude}'
-                        : 'Fetching location...',
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
+            _buildLocationDisplay(),
+            const SizedBox(height: 20),
             TextField(
               controller: _detailsController,
               maxLines: 4,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Details / Notes',
                 border: OutlineInputBorder(),
               ),
             ),
-            SizedBox(height: 30),
+            const SizedBox(height: 30),
             ElevatedButton(
               onPressed: _isSubmitting ? null : _submitRequest,
               style: ElevatedButton.styleFrom(
-                minimumSize: Size.fromHeight(50),
+                minimumSize: const Size.fromHeight(50),
               ),
-              child: Text(_isSubmitting ? 'Submitting...' : 'Submit Rescue Request'),
+              child: Text(
+                _isSubmitting ? 'Submitting...' : 'Submit Rescue Request',
+              ),
             ),
           ],
         ),
