@@ -12,8 +12,14 @@ import 'settings_screen.dart';
 class HomeScreen extends StatefulWidget {
   final String userId;
   final String userType;
+  final ValueChanged<bool>? onThemeChanged;
 
-  const HomeScreen({required this.userId, required this.userType, super.key});
+  const HomeScreen({
+    required this.userId,
+    required this.userType,
+    this.onThemeChanged,
+    super.key,
+  });
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
@@ -22,8 +28,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late FirebaseMessaging _messaging;
-  final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin =
-  FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
   @override
   void initState() {
@@ -104,12 +109,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
-  void _onItemTapped(int index) {
-    if (index == 2) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileScreen(userId: widget.userId)));
-    } else if (index == 3) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen(userId: widget.userId)));
-    }
+  void _onSettingsTapped() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(userId: widget.userId),
+      ),
+    );
   }
 
   Future<String> _getAddress(Map<String, dynamic> data) async {
@@ -204,7 +210,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFFE0C3FC), Color(0xFF8EC5FC)], // white-purple gradient
+          colors: [Color(0xFFE0C3FC), Color(0xFF8EC5FC)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -212,12 +218,52 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
           title: const Text(
             'Animal Rescue Dashboard',
             style: TextStyle(color: Colors.white),
           ),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
+          actions: [
+            FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(widget.userId)
+                  .get(),
+              builder: (context, snapshot) {
+                final userData = snapshot.data?.data() as Map<String, dynamic>?;
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.only(right: 16),
+                    child: CircleAvatar(backgroundColor: Colors.white),
+                  );
+                }
+
+                final imageUrl = userData?['profile_image'] ?? null;
+
+                return IconButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ProfileScreen(userId: widget.userId),
+                      ),
+                    );
+                  },
+                  icon: CircleAvatar(
+                    backgroundImage: imageUrl != null && imageUrl != ''
+                        ? NetworkImage(imageUrl)
+                        : null,
+                    backgroundColor: Colors.white,
+                    child: imageUrl == null || imageUrl == ''
+                        ? const Icon(Icons.person, color: Colors.grey)
+                        : null,
+                  ),
+                );
+              },
+            ),
+          ],
           bottom: TabBar(
             controller: _tabController,
             labelColor: Colors.white,
@@ -238,7 +284,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
         floatingActionButton: FloatingActionButton(
           backgroundColor: Colors.white,
-          foregroundColor: Color(0xFF6A1B9A),
+          foregroundColor: const Color(0xFF6A1B9A),
           onPressed: () {
             Navigator.push(
               context,
@@ -255,7 +301,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: 0,
-          onTap: _onItemTapped,
+          onTap: (index) {
+            if (index == 1) {
+              _onSettingsTapped();
+            }
+          },
           type: BottomNavigationBarType.fixed,
           selectedItemColor: Colors.white,
           unselectedItemColor: Colors.white70,
@@ -263,8 +313,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           elevation: 0,
           items: const [
             BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-            BottomNavigationBarItem(icon: Icon(Icons.notifications), label: 'Disabled'),
-            BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+            //BottomNavigationBarItem(icon: SizedBox(), label: ''),
             BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
           ],
         ),

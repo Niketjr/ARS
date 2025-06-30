@@ -1,17 +1,19 @@
 import 'dart:developer';
-import 'package:animalrescue/registration_screen.dart';
-import 'package:animalrescue/welcome_screen.dart';
 import 'package:animalrescue/home_screen.dart';
+import 'package:animalrescue/registration_screen.dart';
 import 'package:animalrescue/splash_screen.dart';
+import 'package:animalrescue/welcome_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+const _themePrefKey = 'isDarkMode';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -39,23 +41,38 @@ class AnimalRescueApp extends StatefulWidget {
 }
 
 class _AnimalRescueAppState extends State<AnimalRescueApp> {
+  ThemeMode _themeMode = ThemeMode.light;
+
   @override
   void initState() {
     super.initState();
     _setupFCM();
+    _loadThemeMode();
+  }
+
+  Future<void> _loadThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isDark = prefs.getBool(_themePrefKey) ?? false;
+    setState(() {
+      _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+    });
+  }
+
+  void _toggleTheme(bool isDark) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_themePrefKey, isDark);
+    setState(() {
+      _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+    });
   }
 
   void _setupFCM() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
-
-    // Request permissions
     await messaging.requestPermission();
 
-    // Get FCM token
     final token = await messaging.getToken();
     log("FCM Token: $token");
 
-    // Save to Firestore if needed
     final user = FirebaseAuth.instance.currentUser;
     if (user != null && token != null) {
       await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
@@ -63,7 +80,6 @@ class _AnimalRescueAppState extends State<AnimalRescueApp> {
       });
     }
 
-    // Foreground message handling
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       _showNotification(message);
     });
@@ -73,8 +89,16 @@ class _AnimalRescueAppState extends State<AnimalRescueApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Animal Rescue',
-      theme: ThemeData(primarySwatch: Colors.teal),
-      home: const AuthWrapper(),
+      theme: ThemeData(
+        brightness: Brightness.light,
+        primarySwatch: Colors.teal,
+      ),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.teal,
+      ),
+      themeMode: _themeMode,
+      home: AuthWrapper(onThemeChanged: _toggleTheme),
     );
   }
 }
@@ -98,7 +122,9 @@ void _showNotification(RemoteMessage message) async {
 }
 
 class AuthWrapper extends StatelessWidget {
-  const AuthWrapper({super.key});
+  final ValueChanged<bool> onThemeChanged;
+
+  const AuthWrapper({super.key, required this.onThemeChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -123,6 +149,7 @@ class AuthWrapper extends StatelessWidget {
                 return HomeScreen(
                   userId: user.uid,
                   userType: userType,
+                  onThemeChanged: onThemeChanged,
                 );
               } else {
                 return const RegistrationScreen();

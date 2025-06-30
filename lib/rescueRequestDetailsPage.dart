@@ -70,13 +70,16 @@ class _RescueRequestDetailsPageState extends State<RescueRequestDetailsPage> {
 
   Future<LatLng?> _getRescueLocation(Map<String, dynamic> data) async {
     final locationData = data['location'];
-    if (locationData != null &&
-        locationData['latitude'] != null &&
-        locationData['longitude'] != null) {
-      return LatLng(
-        (locationData['latitude'] as num).toDouble(),
-        (locationData['longitude'] as num).toDouble(),
-      );
+    if (locationData != null && locationData['latitude'] != null && locationData['longitude'] != null) {
+      final lat = (locationData['latitude'] as num).toDouble();
+      final lng = (locationData['longitude'] as num).toDouble();
+
+      // One-time update — only if address doesn't already exist
+      if (data['resolved_address'] == null || data['resolved_address'].toString().isEmpty) {
+        await updateAddressInFirestore(widget.requestId, lat, lng);
+      }
+
+      return LatLng(lat, lng);
     }
 
     final manualAddress = data['manual_address'];
@@ -152,6 +155,26 @@ class _RescueRequestDetailsPageState extends State<RescueRequestDetailsPage> {
       return 'Error fetching address';
     }
   }
+
+  Future<void> updateAddressInFirestore(String requestId, double latitude, double longitude) async {
+    try {
+      final placemarks = await placemarkFromCoordinates(latitude, longitude);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        final fullAddress = '${p.street}, ${p.locality}, ${p.administrativeArea}, ${p.country}';
+
+        // Save the resolved address to Firestore
+        await FirebaseFirestore.instance.collection('rescue_requests').doc(requestId).update({
+          'resolved_address': fullAddress,
+        });
+
+        print('✅ Address updated in Firestore for $requestId');
+      }
+    } catch (e) {
+      print('❌ Failed to update address: $e');
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
